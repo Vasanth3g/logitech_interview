@@ -70,6 +70,29 @@ jobs:
         if: success()
         run: |
           docker push myapp-backend:${{ github.sha }}
+      
+      # Notify Slack about success/failure
+      - name: Slack Notification
+        if: always() # This ensures the notification runs even if previous steps fail
+        uses: vasa1995/action-slack@v3 #prebuilt actions
+        with:
+          status: ${{ job.status }}
+          fields: repo,commit,author,took
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Send email notification
+        if: failure() # Only send email if the previous job fails
+        uses: vasanthcustom_mail/action-send-mail@v3 #prebuilt actions
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: Build failed!
+          body: Build Failed ${{ github.run_id }}.
+          to: recipient@example.com
+          from: ${{ secrets.MAIL_USERNAME }}
 
   deploy:
     needs: build
@@ -103,3 +126,26 @@ jobs:
           cluster: my-ecs-cluster
           service: my-ecs-service
           task-definition: my-task-def.json
+    
+      # Notify Slack about success/failure
+      - name: Slack Notification
+        if: always() # This ensures the notification runs even if previous steps fail
+        uses: vasa1995/action-slack@v3 #prebuilt actions
+        with:
+          status: ${{ job.status }}
+          fields: repo,commit,author,took
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Send email notification
+        if: failure() # Only send email if the previous job fails
+        uses: vasanthcustom_mail/action-send-mail@v3 #prebuilt actions
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: Deployment failed!
+          body: Deployment Failed ${{ github.run_id }}.
+          to: recipient@example.com
+          from: ${{ secrets.MAIL_USERNAME }}
