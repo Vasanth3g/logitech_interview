@@ -1,0 +1,83 @@
+pipeline {
+    agent any
+    environment {
+        DOCKER_IMAGE = 'your-docker-repo/app-backend:${env.BUILD_ID}'
+        DOCKER_REGISTRY = 'dockerhub.com/your-repo'
+        KUBE_CONTEXT = 'production-cluster'
+    }
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: "${env.BRANCH_NAME}", url: 'git@github.com:your-org/your-repo.git'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm ci --prefix backend'
+                sh 'npm ci --prefix frontend'
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                sh 'npm test --prefix backend'
+                sh 'npm test --prefix frontend'
+            }
+        }
+
+        stage('Build Application') {
+            steps {
+                sh 'npm run build --prefix backend'
+                sh 'npm run build --prefix frontend'
+            }
+        }
+
+        stage('Build Docker Images') {
+            steps {
+                script {
+                    docker.build(DOCKER_IMAGE, 'backend/')
+                }
+            }
+        }
+
+        stage('Push Docker Images') {
+            when {
+                branch 'master'
+            }
+            steps {
+                script {
+                    docker.withRegistry(DOCKER_REGISTRY) {
+                        docker.image(DOCKER_IMAGE).push()
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            when {
+                branch 'master'
+            }
+            steps {
+                script {
+                    sh 'kubectl apply -f k8s/deployment.yaml --context $KUBE_CONTEXT'
+                }
+            }
+        }
+
+        stage('Deploy Frontend to CDN') {
+            when {
+                branch 'master'
+            }
+            steps {
+                sh 'aws s3 sync frontend/dist s3://your-bucket --delete'
+                sh 'aws cloudfront create-invalidation --distribution-id YOUR_DIST_ID --paths "/*"'
+            }
+        }
+    }
+    post {
+        always {
+            mail to: 'team@example.com', subject: "Build ${env.BUILD_ID}: ${currentBuild.result}", body: "Check build logs."
+        }
+    }
+}

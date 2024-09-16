@@ -1,0 +1,105 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - 'staging' 
+      - 'production'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [14.x, 16.x]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install Dependencies
+        run: |
+          cd frontend
+          npm install
+          cd ../backend
+          npm install
+
+      - name: Build Frontend
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Build Backend
+        run: |
+          cd backend
+          npm run build
+
+      - name: Run Unit Tests
+        run: |
+          cd frontend
+          npm test -- --coverage
+          cd ../backend
+          npm test -- --coverage
+
+      - name: Upload Coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./backend/coverage/*.json, ./frontend/coverage/*.json
+          flags: unittests
+          name: codecov-umbrella
+
+      - name: Build Docker Image
+        if: success()
+        run: |
+          cd backend
+          docker build -t myapp-backend:${{ github.sha }} .
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Push Docker Image
+        if: success()
+        run: |
+          docker push myapp-backend:${{ github.sha }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      
+      - name: Configure kubectl
+        if: ${{ matrix.os }} == 'linux-latest'
+        uses: azure/k8s-set-context@v3 ##make sure have on-permises kube context 
+        with:
+            method: kubeconfig 
+            kubeconfig: ${{ secrets.KUBECONFIG }}
+            namespace: default
+
+      - name: Deploy to Kubernetes
+        if: ${{ matrix.os }} == 'linux-latest' # Have VPN tunneling to reach out on-permises server
+        run: |
+            kubectl set image deployment/my-app-deployment my-app=${{ secrets.DOCKER_USERNAME }}/my-app:latest
+            kubectl rollout status deployment/my-app-deployment
+ 
+      - name: Deploy to AWS ECS
+        if: ${{ matrix.os }} == 'windows-latest' || ${{ matrix.os }} == 'macos-latest'
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          cluster: my-ecs-cluster
+          service: my-ecs-service
+          task-definition: my-task-def.json

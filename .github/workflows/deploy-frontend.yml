@@ -1,0 +1,18 @@
+name: Package Frontend Pipeline
+
+on:
+  push:
+    branches:
+      - 'dev'  # Trigger on all branches
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu, windows, macos]
+    steps:
+    - name: Package Frontend for ${{ matrix.os }}
+    run: |
+        cd frontend
+        npm run package -- --os=${{ matrix.os }}
